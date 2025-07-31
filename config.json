@@ -1,0 +1,44 @@
+{
+  "search_terms": [
+    "iphone",
+    "laptop", 
+    "computadora",
+    "televisor",
+    "auto"
+  ],
+  "max_price": 2000,
+  "min_price": 50,
+  "locations": [
+    "havana",
+    "matanzas", 
+    "villa clara",
+    "santiago"
+  ],
+  "categories": [
+    "electronica",
+    "celulares",
+    "computadoras",
+    "autos"
+  ],
+  "check_interval": 300,
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "tu_email@gmail.com",
+      "password": "tu_contraseña_de_app",
+      "to_email": "destinatario@gmail.com"
+    }
+  },
+  "filters": {
+    "exclude_keywords": [
+      "dañado",
+      "roto", 
+      "no funciona",
+      "repuesto",
+      "piezas"
+    ],
+    "require_keywords": []
+  }
+}
