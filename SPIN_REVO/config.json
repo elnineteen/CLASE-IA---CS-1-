@@ -1,0 +1,9 @@
+{
+  "delay_min": 8,
+  "delay_max": 15,
+  "max_posts_per_hour": 10,
+  "revolico_login": {
+    "email": "MI_EMAIL",
+    "password": "MI_PASSWORD"
+  }
+}
