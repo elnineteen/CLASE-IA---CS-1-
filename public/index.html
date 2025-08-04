@@ -26,8 +26,8 @@
             <button class="tab-button active" data-tab="dashboard">
                 <i class="fas fa-chart-line"></i> Dashboard
             </button>
-            <button class="tab-button" data-tab="sheets">
-                <i class="fas fa-table"></i> Google Sheets
+            <button class="tab-button" data-tab="datasources">
+                <i class="fas fa-database"></i> Fuentes de Datos
             </button>
             <button class="tab-button" data-tab="accounts">
                 <i class="fas fa-users"></i> Cuentas
@@ -134,37 +134,104 @@
                 </div>
             </div>
 
-            <!-- Google Sheets Tab -->
-            <div class="tab-content" id="sheets">
+            <!-- Data Sources Tab -->
+            <div class="tab-content" id="datasources">
                 <div class="section-header">
-                    <h2><i class="fas fa-table"></i> Configuración de Google Sheets</h2>
-                    <p>Conecta tu hoja de cálculo para obtener los productos a publicar</p>
+                    <h2><i class="fas fa-database"></i> Fuentes de Datos</h2>
+                    <p>Elige y configura tu fuente de datos para los productos</p>
                 </div>
 
-                <div class="sheets-config">
-                    <div class="config-card">
-                        <h3><i class="fas fa-key"></i> Autorización</h3>
-                        <div class="auth-status" id="authStatus">
-                            <i class="fas fa-times-circle text-danger"></i>
-                            <span>No autorizado</span>
+                <!-- Data Source Selector -->
+                <div class="datasource-selector">
+                    <h3><i class="fas fa-toggle-on"></i> Fuente de Datos Activa</h3>
+                    <div class="source-toggle">
+                        <label class="radio-card">
+                            <input type="radio" name="dataSource" value="googleSheets" checked>
+                            <div class="radio-content">
+                                <i class="fas fa-table"></i>
+                                <span>Google Sheets</span>
+                                <small>Conecta con tu hoja de cálculo en línea</small>
+                            </div>
+                        </label>
+                        <label class="radio-card">
+                            <input type="radio" name="dataSource" value="excel">
+                            <div class="radio-content">
+                                <i class="fas fa-file-excel"></i>
+                                <span>Archivo Excel</span>
+                                <small>Sube un archivo .xlsx o .xls</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Google Sheets Section -->
+                <div class="datasource-section" id="googleSheetsSection">
+                    <h3><i class="fas fa-table"></i> Configuración de Google Sheets</h3>
+                    <div class="sheets-config">
+                        <div class="config-card">
+                            <h4><i class="fas fa-key"></i> Autorización</h4>
+                            <div class="auth-status" id="authStatus">
+                                <i class="fas fa-times-circle text-danger"></i>
+                                <span>No autorizado</span>
+                            </div>
+                            <button class="btn btn-primary" id="authorizeGoogle">
+                                <i class="fas fa-sign-in-alt"></i>
+                                Autorizar Google Sheets
+                            </button>
                         </div>
-                        <button class="btn btn-primary" id="authorizeGoogle">
-                            <i class="fas fa-sign-in-alt"></i>
-                            Autorizar Google Sheets
-                        </button>
-                    </div>
 
-                    <div class="config-card">
-                        <h3><i class="fas fa-link"></i> Conexión</h3>
-                        <button class="btn btn-secondary" id="testConnection">
-                            <i class="fas fa-plug"></i>
-                            Probar Conexión
-                        </button>
-                        <div class="connection-result" id="connectionResult"></div>
+                        <div class="config-card">
+                            <h4><i class="fas fa-link"></i> Conexión</h4>
+                            <button class="btn btn-secondary" id="testConnection">
+                                <i class="fas fa-plug"></i>
+                                Probar Conexión
+                            </button>
+                            <div class="connection-result" id="connectionResult"></div>
+                        </div>
                     </div>
+                </div>
 
+                <!-- Excel Section -->
+                <div class="datasource-section" id="excelSection" style="display: none;">
+                    <h3><i class="fas fa-file-excel"></i> Configuración de Excel</h3>
+                    <div class="excel-config">
+                        <div class="config-card">
+                            <h4><i class="fas fa-upload"></i> Subir Archivo Excel</h4>
+                            <div class="file-upload-area" id="excelUploadArea">
+                                <div class="upload-content">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>Arrastra tu archivo Excel aquí o haz clic para seleccionar</p>
+                                    <small>Formatos soportados: .xlsx, .xls (máximo 10MB)</small>
+                                </div>
+                                <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display: none;">
+                            </div>
+                            <button class="btn btn-primary" id="uploadExcelBtn">
+                                <i class="fas fa-upload"></i>
+                                Seleccionar Archivo
+                            </button>
+                        </div>
+
+                        <div class="config-card" id="excelInfoCard" style="display: none;">
+                            <h4><i class="fas fa-info-circle"></i> Información del Archivo</h4>
+                            <div class="excel-info" id="excelInfo"></div>
+                            <div class="excel-actions">
+                                <button class="btn btn-secondary" id="validateExcelBtn">
+                                    <i class="fas fa-check-circle"></i>
+                                    Validar Estructura
+                                </button>
+                                <button class="btn btn-danger" id="clearExcelBtn">
+                                    <i class="fas fa-trash"></i>
+                                    Limpiar Datos
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Products Preview -->
+                <div class="products-section">
                     <div class="config-card">
-                        <h3><i class="fas fa-eye"></i> Vista Previa</h3>
+                        <h3><i class="fas fa-eye"></i> Vista Previa de Productos</h3>
                         <button class="btn btn-secondary" id="previewProducts">
                             <i class="fas fa-search"></i>
                             Ver Productos
@@ -173,25 +240,22 @@
                     </div>
                 </div>
 
-                <div class="sheet-requirements">
-                    <h3><i class="fas fa-info-circle"></i> Estructura Requerida</h3>
-                    <p>Tu hoja de Google Sheets debe tener estas columnas:</p>
+                <!-- Requirements -->
+                <div class="requirements-section">
+                    <h3><i class="fas fa-info-circle"></i> Estructura de Datos Requerida</h3>
+                    <p>Tanto para Google Sheets como para Excel, tus datos deben tener estas columnas:</p>
                     <div class="requirements-grid">
                         <div class="requirement-item required">
                             <i class="fas fa-star text-danger"></i>
-                            <strong>nombre</strong> - Nombre del producto
+                            <strong>titulo/nombre</strong> - Nombre del producto
                         </div>
                         <div class="requirement-item required">
                             <i class="fas fa-star text-danger"></i>
                             <strong>precio</strong> - Precio del producto
                         </div>
-                        <div class="requirement-item required">
-                            <i class="fas fa-star text-danger"></i>
-                            <strong>descripcion</strong> - Descripción detallada
-                        </div>
                         <div class="requirement-item">
                             <i class="fas fa-circle text-warning"></i>
-                            <strong>imagenURL</strong> - URL de la imagen
+                            <strong>descripcion</strong> - Descripción detallada
                         </div>
                         <div class="requirement-item">
                             <i class="fas fa-circle text-warning"></i>
@@ -199,21 +263,29 @@
                         </div>
                         <div class="requirement-item">
                             <i class="fas fa-circle text-warning"></i>
-                            <strong>ubicacion</strong> - Ubicación/provincia
+                            <strong>fotos/imagen</strong> - URL de las imágenes
                         </div>
                         <div class="requirement-item">
                             <i class="fas fa-circle text-warning"></i>
-                            <strong>contacto</strong> - Teléfono de contacto
+                            <strong>ubicacion/municipio</strong> - Ubicación
                         </div>
                         <div class="requirement-item">
                             <i class="fas fa-circle text-warning"></i>
-                            <strong>linkWhatsApp</strong> - Enlace de WhatsApp
+                            <strong>contacto/telefono</strong> - Teléfono de contacto
+                        </div>
+                        <div class="requirement-item">
+                            <i class="fas fa-circle text-info"></i>
+                            <strong>moneda</strong> - Moneda (USD, CUP, etc.)
+                        </div>
+                        <div class="requirement-item">
+                            <i class="fas fa-circle text-info"></i>
+                            <strong>email</strong> - Correo electrónico
                         </div>
                     </div>
                     <div class="requirements-note">
                         <i class="fas fa-lightbulb"></i>
                         <strong>Nota:</strong> Los campos marcados con <i class="fas fa-star text-danger"></i> son obligatorios.
-                        Los campos <strong>publicado</strong> y <strong>fecha_publicacion</strong> se llenarán automáticamente.
+                        El sistema reconoce automáticamente variaciones en los nombres de las columnas.
                     </div>
                 </div>
             </div>

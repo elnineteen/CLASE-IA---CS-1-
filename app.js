@@ -7,6 +7,7 @@ const fs = require('fs-extra');
 
 // Importar módulos personalizados
 const googleSheets = require('./modules/googleSheets');
+const excelManager = require('./modules/excelManager');
 const revolicoBot = require('./modules/revolicoBot');
 const logger = require('./modules/logger');
 
@@ -33,7 +34,31 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
+
+// Configurar multer para archivos Excel
+const excelStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, './uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+
 const upload = multer({ storage: storage });
+const uploadExcel = multer({ 
+  storage: excelStorage,
+  fileFilter: function (req, file, cb) {
+    // Aceptar solo archivos Excel
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+        file.mimetype === 'application/vnd.ms-excel' || 
+        file.originalname.match(/\.(xlsx|xls)$/)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten archivos Excel (.xlsx, .xls)'), false);
+    }
+  }
+});
 
 // Estado global de la aplicación
 let appState = {
@@ -43,7 +68,9 @@ let appState = {
   publishedToday: 0,
   errors: [],
   lastUpdate: new Date(),
-  accounts: []
+  accounts: [],
+  dataSource: 'googleSheets', // 'googleSheets' o 'excel'
+  excelFileInfo: null
 };
 
 // Rutas principales
@@ -92,11 +119,23 @@ app.get('/api/test-sheets', async (req, res) => {
   }
 });
 
-// API para obtener productos desde Google Sheets
+// API para obtener productos (desde Google Sheets o Excel)
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await googleSheets.getProducts();
-    res.json({ products, total: products.length });
+    let products = [];
+    
+    if (appState.dataSource === 'excel') {
+      products = excelManager.getProducts();
+    } else {
+      products = await googleSheets.getProducts();
+    }
+    
+    res.json({ 
+      products, 
+      total: products.length,
+      dataSource: appState.dataSource,
+      fileInfo: appState.dataSource === 'excel' ? excelManager.getCurrentFileInfo() : null
+    });
   } catch (error) {
     logger.error('Error al obtener productos:', error);
     res.status(500).json({ error: error.message });
@@ -128,6 +167,140 @@ app.post('/api/upload-cookies', upload.single('cookiesFile'), (req, res) => {
     res.json({ success: true, message: 'Cookies subidas correctamente' });
   } catch (error) {
     logger.error('Error al subir cookies:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para subir archivo Excel
+app.post('/api/upload-excel', uploadExcel.single('excelFile'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo Excel' });
+    }
+
+    const filePath = req.file.path;
+    const originalName = req.file.originalname;
+
+    // Procesar archivo Excel
+    const result = await excelManager.processExcelFile(filePath, originalName);
+    
+    if (result.success) {
+      // Cambiar fuente de datos a Excel
+      appState.dataSource = 'excel';
+      appState.excelFileInfo = excelManager.getCurrentFileInfo();
+      
+      logger.info(`Archivo Excel procesado exitosamente: ${originalName}`);
+      res.json({
+        success: true,
+        message: 'Archivo Excel procesado correctamente',
+        stats: result.stats,
+        fileInfo: appState.excelFileInfo
+      });
+    } else {
+      res.status(400).json({ error: 'Error al procesar archivo Excel' });
+    }
+  } catch (error) {
+    logger.error('Error al subir archivo Excel:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para cambiar fuente de datos
+app.post('/api/data-source', (req, res) => {
+  try {
+    const { dataSource } = req.body;
+    
+    if (!dataSource || !['googleSheets', 'excel'].includes(dataSource)) {
+      return res.status(400).json({ error: 'Fuente de datos inválida' });
+    }
+
+    if (dataSource === 'excel' && !excelManager.getCurrentFileInfo()) {
+      return res.status(400).json({ error: 'No hay archivo Excel cargado' });
+    }
+
+    appState.dataSource = dataSource;
+    logger.info(`Fuente de datos cambiada a: ${dataSource}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Fuente de datos cambiada a ${dataSource}`,
+      dataSource: appState.dataSource
+    });
+  } catch (error) {
+    logger.error('Error al cambiar fuente de datos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para obtener información del archivo Excel actual
+app.get('/api/excel-info', (req, res) => {
+  try {
+    const fileInfo = excelManager.getCurrentFileInfo();
+    const stats = excelManager.getStats();
+    
+    res.json({
+      fileInfo,
+      stats,
+      isActive: appState.dataSource === 'excel'
+    });
+  } catch (error) {
+    logger.error('Error al obtener información del Excel:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para validar estructura del Excel
+app.post('/api/validate-excel', uploadExcel.single('excelFile'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo Excel' });
+    }
+
+    const filePath = req.file.path;
+    
+    // Leer solo los headers para validación
+    const XLSX = require('xlsx');
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    if (!data || data.length === 0) {
+      return res.status(400).json({ error: 'El archivo Excel está vacío' });
+    }
+
+    const headers = data[0];
+    const validation = excelManager.validateExcelStructure(headers);
+    
+    // Limpiar archivo temporal
+    fs.removeSync(filePath);
+    
+    res.json({
+      validation,
+      headers,
+      totalRows: data.length - 1 // -1 por el header
+    });
+  } catch (error) {
+    logger.error('Error al validar Excel:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API para limpiar datos de Excel
+app.delete('/api/excel-data', (req, res) => {
+  try {
+    excelManager.clearCurrentData();
+    
+    // Si estaba usando Excel, cambiar a Google Sheets
+    if (appState.dataSource === 'excel') {
+      appState.dataSource = 'googleSheets';
+      appState.excelFileInfo = null;
+    }
+    
+    logger.info('Datos de Excel limpiados');
+    res.json({ success: true, message: 'Datos de Excel limpiados' });
+  } catch (error) {
+    logger.error('Error al limpiar datos de Excel:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -236,8 +409,14 @@ async function publishProducts() {
   try {
     logger.info('Iniciando publicación masiva de productos');
 
-    // Obtener productos desde Google Sheets
-    const products = await googleSheets.getProducts();
+    // Obtener productos desde la fuente de datos configurada
+    let products = [];
+    if (appState.dataSource === 'excel') {
+      products = excelManager.getProducts();
+    } else {
+      products = await googleSheets.getProducts();
+    }
+    
     const unpublishedProducts = products.filter(product => !product.publicado);
 
     appState.totalProducts = unpublishedProducts.length;
@@ -271,8 +450,13 @@ async function publishProducts() {
         const result = await revolicoBot.publishProduct(product, appState.accounts[currentAccountIndex]);
 
         if (result.success) {
-          // Marcar como publicado en Google Sheets
-          await googleSheets.markAsPublished(product.rowIndex);
+          // Marcar como publicado en la fuente de datos correspondiente
+          if (appState.dataSource === 'excel') {
+            await excelManager.markAsPublished(product.rowIndex);
+          } else {
+            await googleSheets.markAsPublished(product.rowIndex);
+          }
+          
           appState.publishedToday++;
           publicationsWithCurrentAccount++;
           appState.accounts[currentAccountIndex].publicationsToday++;

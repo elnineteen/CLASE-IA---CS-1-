@@ -50,6 +50,20 @@ const elements = {
     connectionResult: document.getElementById('connectionResult'),
     productsPreview: document.getElementById('productsPreview'),
     
+    // Data Sources
+    dataSourceRadios: document.querySelectorAll('input[name="dataSource"]'),
+    googleSheetsSection: document.getElementById('googleSheetsSection'),
+    excelSection: document.getElementById('excelSection'),
+    
+    // Excel
+    excelUploadArea: document.getElementById('excelUploadArea'),
+    excelFileInput: document.getElementById('excelFileInput'),
+    uploadExcelBtn: document.getElementById('uploadExcelBtn'),
+    excelInfoCard: document.getElementById('excelInfoCard'),
+    excelInfo: document.getElementById('excelInfo'),
+    validateExcelBtn: document.getElementById('validateExcelBtn'),
+    clearExcelBtn: document.getElementById('clearExcelBtn'),
+    
     // Accounts
     addAccountForm: document.getElementById('addAccountForm'),
     accountsList: document.getElementById('accountsList'),
@@ -102,6 +116,11 @@ function setupEventListeners() {
         elements.stopPublishingMain.addEventListener('click', stopPublishing);
     }
 
+    // Data Sources
+    elements.dataSourceRadios.forEach(radio => {
+        radio.addEventListener('change', switchDataSource);
+    });
+
     // Google Sheets
     if (elements.authorizeGoogle) {
         elements.authorizeGoogle.addEventListener('click', authorizeGoogleSheets);
@@ -111,6 +130,23 @@ function setupEventListeners() {
     }
     if (elements.previewProducts) {
         elements.previewProducts.addEventListener('click', previewProducts);
+    }
+
+    // Excel
+    if (elements.uploadExcelBtn) {
+        elements.uploadExcelBtn.addEventListener('click', () => elements.excelFileInput.click());
+    }
+    if (elements.excelFileInput) {
+        elements.excelFileInput.addEventListener('change', handleExcelFileSelect);
+    }
+    if (elements.excelUploadArea) {
+        setupExcelDragAndDrop();
+    }
+    if (elements.validateExcelBtn) {
+        elements.validateExcelBtn.addEventListener('click', validateExcelFile);
+    }
+    if (elements.clearExcelBtn) {
+        elements.clearExcelBtn.addEventListener('click', clearExcelData);
     }
 
     // Accounts
@@ -809,5 +845,357 @@ function showToast(message, type = 'info') {
     }, 5000);
 }
 
+// ===== EXCEL FUNCTIONALITY =====
+
+// Switch between data sources
+function switchDataSource(event) {
+    const dataSource = event.target.value;
+    
+    // Toggle sections visibility
+    if (dataSource === 'excel') {
+        elements.googleSheetsSection.style.display = 'none';
+        elements.excelSection.style.display = 'block';
+        loadExcelInfo();
+    } else {
+        elements.googleSheetsSection.style.display = 'block';
+        elements.excelSection.style.display = 'none';
+    }
+    
+    // Update server data source
+    updateServerDataSource(dataSource);
+}
+
+// Update data source on server
+async function updateServerDataSource(dataSource) {
+    try {
+        const response = await fetch('/api/data-source', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ dataSource })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(`Fuente de datos cambiada a ${dataSource === 'excel' ? 'Excel' : 'Google Sheets'}`, 'success');
+            await loadAppStatus(); // Refresh app status
+        } else {
+            throw new Error(result.error || 'Error al cambiar fuente de datos');
+        }
+    } catch (error) {
+        console.error('Error updating data source:', error);
+        showToast('Error al cambiar fuente de datos: ' + error.message, 'error');
+    }
+}
+
+// Setup drag and drop for Excel upload
+function setupExcelDragAndDrop() {
+    const uploadArea = elements.excelUploadArea;
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, unhighlight, false);
+    });
+    
+    uploadArea.addEventListener('drop', handleExcelDrop, false);
+    uploadArea.addEventListener('click', () => elements.excelFileInput.click());
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    function highlight() {
+        uploadArea.classList.add('dragover');
+    }
+    
+    function unhighlight() {
+        uploadArea.classList.remove('dragover');
+    }
+}
+
+// Handle Excel file drop
+function handleExcelDrop(e) {
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleExcelFile(files[0]);
+    }
+}
+
+// Handle Excel file selection
+function handleExcelFileSelect(e) {
+    const files = e.target.files;
+    if (files.length > 0) {
+        handleExcelFile(files[0]);
+    }
+}
+
+// Process Excel file
+async function handleExcelFile(file) {
+    // Validate file type
+    if (!file.name.match(/\.(xlsx|xls)$/)) {
+        showToast('Por favor selecciona un archivo Excel válido (.xlsx o .xls)', 'error');
+        return;
+    }
+    
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('El archivo es demasiado grande. Máximo 10MB permitido.', 'error');
+        return;
+    }
+    
+    showLoading('Procesando archivo Excel...');
+    
+    try {
+        const formData = new FormData();
+        formData.append('excelFile', file);
+        
+        const response = await fetch('/api/upload-excel', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(`Excel procesado exitosamente: ${result.stats.validProducts} productos encontrados`, 'success');
+            displayExcelInfo(result.fileInfo, result.stats);
+            elements.excelInfoCard.style.display = 'block';
+            
+            // Switch to Excel data source
+            document.querySelector('input[name="dataSource"][value="excel"]').checked = true;
+            switchDataSource({ target: { value: 'excel' } });
+            
+            // Refresh products preview if it's visible
+            if (elements.productsPreview.innerHTML.trim() !== '') {
+                previewProducts();
+            }
+            
+            addActivity(`Archivo Excel cargado: ${file.name}`, 'success');
+        } else {
+            throw new Error(result.error || 'Error al procesar archivo Excel');
+        }
+    } catch (error) {
+        console.error('Error processing Excel file:', error);
+        showToast('Error al procesar archivo Excel: ' + error.message, 'error');
+        addActivity(`Error al cargar Excel: ${file.name}`, 'error');
+    } finally {
+        hideLoading();
+        // Clear file input
+        elements.excelFileInput.value = '';
+    }
+}
+
+// Display Excel file information
+function displayExcelInfo(fileInfo, stats) {
+    if (!fileInfo || !elements.excelInfo) return;
+    
+    const formatDate = (date) => new Date(date).toLocaleString('es-ES');
+    const formatSize = (bytes) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+    
+    elements.excelInfo.innerHTML = `
+        <div class="excel-info-item">
+            <strong>Archivo:</strong>
+            <span>${fileInfo.originalName}</span>
+        </div>
+        <div class="excel-info-item">
+            <strong>Procesado:</strong>
+            <span>${formatDate(fileInfo.processedAt)}</span>
+        </div>
+        <div class="excel-info-item">
+            <strong>Total Filas:</strong>
+            <span>${fileInfo.totalRows}</span>
+        </div>
+        <div class="excel-info-item">
+            <strong>Productos Válidos:</strong>
+            <span class="excel-status success">
+                <i class="fas fa-check-circle"></i>
+                ${fileInfo.validProducts}
+            </span>
+        </div>
+        <div class="excel-info-item">
+            <strong>Columnas Detectadas:</strong>
+            <span>${fileInfo.headers.length}</span>
+        </div>
+        <div class="excel-info-item">
+            <strong>Estado:</strong>
+            <span class="excel-status success">
+                <i class="fas fa-check-circle"></i>
+                Activo
+            </span>
+        </div>
+    `;
+}
+
+// Load Excel information on page load
+async function loadExcelInfo() {
+    try {
+        const response = await fetch('/api/excel-info');
+        const result = await response.json();
+        
+        if (result.fileInfo) {
+            displayExcelInfo(result.fileInfo, result.stats);
+            elements.excelInfoCard.style.display = 'block';
+        } else {
+            elements.excelInfoCard.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading Excel info:', error);
+        elements.excelInfoCard.style.display = 'none';
+    }
+}
+
+// Validate Excel file structure
+async function validateExcelFile() {
+    const fileInput = elements.excelFileInput;
+    
+    if (!fileInput.files.length) {
+        showToast('Por favor selecciona un archivo Excel para validar', 'warning');
+        return;
+    }
+    
+    showLoading('Validando estructura del Excel...');
+    
+    try {
+        const formData = new FormData();
+        formData.append('excelFile', fileInput.files[0]);
+        
+        const response = await fetch('/api/validate-excel', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.validation) {
+            displayValidationResult(result.validation, result.headers, result.totalRows);
+        } else {
+            throw new Error('Error en la validación');
+        }
+    } catch (error) {
+        console.error('Error validating Excel:', error);
+        showToast('Error al validar Excel: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Display validation results
+function displayValidationResult(validation, headers, totalRows) {
+    let message = `<h4>Resultado de Validación</h4>`;
+    message += `<p><strong>Total de filas:</strong> ${totalRows}</p>`;
+    message += `<p><strong>Columnas encontradas:</strong> ${headers.join(', ')}</p>`;
+    
+    if (validation.valid) {
+        message += `<div class="excel-status success">
+            <i class="fas fa-check-circle"></i>
+            Estructura válida
+        </div>`;
+    } else {
+        message += `<div class="excel-status error">
+            <i class="fas fa-exclamation-circle"></i>
+            Estructura inválida
+        </div>`;
+    }
+    
+    if (validation.errors.length > 0) {
+        message += `<h5>Errores:</h5><ul>`;
+        validation.errors.forEach(error => {
+            message += `<li class="text-danger">${error}</li>`;
+        });
+        message += `</ul>`;
+    }
+    
+    if (validation.warnings.length > 0) {
+        message += `<h5>Advertencias:</h5><ul>`;
+        validation.warnings.forEach(warning => {
+            message += `<li class="text-warning">${warning}</li>`;
+        });
+        message += `</ul>`;
+    }
+    
+    // Show in modal or dedicated area
+    showToast(validation.valid ? 'Estructura válida' : 'Estructura inválida - revisa los errores', 
+              validation.valid ? 'success' : 'error');
+    
+    // You can also display detailed results in a modal if needed
+    console.log('Validation details:', message);
+}
+
+// Clear Excel data
+async function clearExcelData() {
+    if (!confirm('¿Estás seguro de que quieres limpiar los datos de Excel? Esta acción no se puede deshacer.')) {
+        return;
+    }
+    
+    showLoading('Limpiando datos de Excel...');
+    
+    try {
+        const response = await fetch('/api/excel-data', {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('Datos de Excel limpiados correctamente', 'success');
+            elements.excelInfoCard.style.display = 'none';
+            elements.excelFileInput.value = '';
+            
+            // Switch back to Google Sheets
+            document.querySelector('input[name="dataSource"][value="googleSheets"]').checked = true;
+            switchDataSource({ target: { value: 'googleSheets' } });
+            
+            addActivity('Datos de Excel limpiados', 'info');
+        } else {
+            throw new Error(result.error || 'Error al limpiar datos');
+        }
+    } catch (error) {
+        console.error('Error clearing Excel data:', error);
+        showToast('Error al limpiar datos de Excel: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Update the initialization to load current data source
+async function loadCurrentDataSource() {
+    try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        
+        if (status.dataSource) {
+            // Set the correct radio button
+            const radio = document.querySelector(`input[name="dataSource"][value="${status.dataSource}"]`);
+            if (radio) {
+                radio.checked = true;
+                switchDataSource({ target: { value: status.dataSource } });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading current data source:', error);
+    }
+}
+
 // Hacer funciones globales para uso en HTML
 window.deleteAccount = deleteAccount;
+
+// Initialize data source on page load
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(loadCurrentDataSource, 1000); // Load after initial setup
+});
